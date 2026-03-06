@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <!-- StyleCop Analyzers configuration -->
+  <!-- This config may be incompatible with Jumpstart since it uses the same file.
+       If we opt for Jumpstart, this may need to be migrated. -->
+  <PropertyGroup>
+    <LangVersion>preview</LangVersion>
+    <Nullable>enable</Nullable>
+	  <NoWarn>$(NoWarn);NU1701;CS9057;MSB3277;NETSDK1206;NU1507;NU1008;CA2007;NU1900</NoWarn>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RunAnalyzersDuringBuild>true</RunAnalyzersDuringBuild>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+	  <AnalysisLevel>latest</AnalysisLevel>
+	  <AnalysisMode>AllEnabledByDefault</AnalysisMode>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <ImplicitUsings>enable</ImplicitUsings>
+	  <EditorConfigFilePath>$(MSBuildThisFileDirectory).editorconfig</EditorConfigFilePath>
+    <!-- 在 VS 解决方案资源管理器中隐藏 _build 文件夹 -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);_build\**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <!-- 检测是否为 Source Generator 项目 -->
+  <PropertyGroup>
+    <_IsSourceGenerator>false</_IsSourceGenerator>
+    <_IsSourceGenerator Condition="$(MSBuildProjectName.EndsWith('Generator'))">true</_IsSourceGenerator>
+  </PropertyGroup>
+
+  <!-- Source Generator 项目：强制使用 AnyCPU（Generator 必须是 AnyCPU 因为运行在 Roslyn 编译器进程中） -->
+  <PropertyGroup Condition="'$(_IsSourceGenerator)' == 'true'">
+    <Platform>AnyCPU</Platform>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+  </PropertyGroup>
+
+  <!-- 常规项目：使用 Platform 相关的输出目录 -->
+  <PropertyGroup Condition="'$(_IsSourceGenerator)' != 'true'">
+    <BuildOutDir>$([MSBuild]::NormalizeDirectory('$(SolutionDir)', '_build', '$(Platform)', '$(Configuration)'))</BuildOutDir>
+    <OutDir>$([MSBuild]::NormalizeDirectory('$(BuildOutDir)', '$(MSBuildProjectName)', 'bin'))</OutDir>
+    <IntDir>$([MSBuild]::NormalizeDirectory('$(BuildOutDir)', '$(MSBuildProjectName)', 'obj'))</IntDir>
+  </PropertyGroup>
+
+  <!-- Source Generator 项目：强制使用 AnyCPU 输出目录 -->
+  <PropertyGroup Condition="'$(_IsSourceGenerator)' == 'true'">
+    <BuildOutDir>$([MSBuild]::NormalizeDirectory('$(SolutionDir)', '_build', 'AnyCPU', '$(Configuration)'))</BuildOutDir>
+    <OutDir>$([MSBuild]::NormalizeDirectory('$(BuildOutDir)', '$(MSBuildProjectName)', 'bin'))</OutDir>
+    <IntDir>$([MSBuild]::NormalizeDirectory('$(BuildOutDir)', '$(MSBuildProjectName)', 'obj'))</IntDir>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(MSBuildProjectExtension)' == '.csproj'">
+	  <AdditionalFiles Include="$(EditorConfigFilePath)" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/Utilities/">
+    <Project Path="Utilities/SqliteGenerator/SqliteGenerator.csproj" Id="a1b2c3d4-e5f6-7890-abcd-ef1234567890" />
+  </Folder>
+  <Project Path="ConnectorShare/ConnectorShare.csproj" Id="e3526d6e-d495-4802-9b94-28587169522b" />
+  <Project Path="ConnectorStorage/ConnectorStorage.csproj" Id="2999a9c7-cb67-4658-92b8-4234d1bb0212" />
+  <Project Path="ConnectorWebServer/ConnectorWebServer.csproj" Id="ebcead7d-b3b4-4f32-a726-15fdfa4d2e4a" />
+</Solution>

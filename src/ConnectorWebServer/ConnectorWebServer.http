@@ -1,0 +1,27 @@
+@ConnectorWebServer_HostAddress = http://localhost:5049
+
+### 注册设备（获取令牌）
+POST {{ConnectorWebServer_HostAddress}}/api/auth/register
+Content-Type: application/json
+
+{
+  "deviceName": "TestDevice",
+  "deviceType": 1,
+  "preSharedKey": "change-me-in-production"
+}
+
+### 刷新令牌
+POST {{ConnectorWebServer_HostAddress}}/api/auth/refresh
+Content-Type: application/json
+
+{
+  "accessToken": "YOUR_TOKEN_HERE"
+}
+
+### 查询设备状态
+GET {{ConnectorWebServer_HostAddress}}/api/devices/status
+Authorization: Bearer YOUR_TOKEN_HERE
+
+### 查询待处理消息
+GET {{ConnectorWebServer_HostAddress}}/api/messages/pending
+Authorization: Bearer YOUR_TOKEN_HERE
