@@ -43,6 +43,11 @@ internal sealed class ConnectorSettings
     public long TokenExpiresAt { get; set; }
 
     /// <summary>
+    /// 权限请求转发延迟秒数（等待用户本地操作，0 表示立即转发）.
+    /// </summary>
+    public int PermissionForwardDelaySeconds { get; set; } = 15;
+
+    /// <summary>
     /// 是否注册为 Windows 服务.
     /// </summary>
     public bool RunAsWindowsService { get; set; }

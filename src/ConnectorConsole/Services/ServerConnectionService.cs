@@ -417,7 +417,7 @@ internal sealed class ServerConnectionService : IAsyncDisposable
         _logger.LogDebug("收到消息: Type={Type}, MessageId={MessageId}, CorrelationId={CorrelationId}",
             message.Type, message.MessageId, message.CorrelationId);
 
-        if (message.Type == MessageType.Response && !string.IsNullOrEmpty(message.CorrelationId))
+        if (message.Type == MessageType.Response)
         {
             try
             {

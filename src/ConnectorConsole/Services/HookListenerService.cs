@@ -212,6 +212,32 @@ internal sealed class HookListenerService : IAsyncDisposable
         _logger.LogInformation("收到权限请求: RequestId={RequestId}, Tool={ToolName}, Session={SessionId}",
             requestId, payload.ToolName, payload.SessionId);
 
+        // 延迟转发：等待用户在本地 Claude Code 终端操作
+        var delaySeconds = _configService.Settings.PermissionForwardDelaySeconds;
+        if (delaySeconds > 0)
+        {
+            _logger.LogInformation("等待 {DelaySeconds}s，若用户在终端操作则跳过远程转发: {RequestId}",
+                delaySeconds, requestId);
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            // 延迟结束后检测客户端是否仍在等待
+            if (!IsClientConnected(context))
+            {
+                _logger.LogInformation("用户已在终端处理权限请求，跳过远程转发: {RequestId}", requestId);
+                return;
+            }
+
+            _logger.LogInformation("延迟已过，用户未在终端操作，转发到远程设备: {RequestId}", requestId);
+        }
+
         // 构造权限请求载荷
         var permissionPayload = new PermissionRequestPayload
         {
@@ -224,12 +250,14 @@ internal sealed class HookListenerService : IAsyncDisposable
             ReceivedTimestampMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         };
 
+        var messageId = Guid.NewGuid().ToString();
         var wsMessage = new WebSocketMessage
         {
-            MessageId = Guid.NewGuid().ToString(),
+            MessageId = messageId,
             Type = MessageType.Notification,
             SourceDeviceId = _configService.Settings.DeviceId,
             Payload = JsonSerializer.Serialize(permissionPayload, ConsoleJsonContext.Default.PermissionRequestPayload),
+            CorrelationId = messageId,
             Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
         };
 
@@ -247,17 +275,48 @@ internal sealed class HookListenerService : IAsyncDisposable
             return;
         }
 
-        // 等待远程响应
+        // 等待远程响应（同时定期检测客户端是否断开）
         try
         {
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(PermissionTimeoutSeconds));
 
-            var response = await tcs.Task.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
-            _logger.LogInformation("权限请求已响应: RequestId={RequestId}, Behavior={Behavior}", requestId, response.Behavior);
+            while (!timeoutCts.Token.IsCancellationRequested)
+            {
+                // 每秒检查一次：远程响应是否到达，或客户端是否断开
+                var delayTask = Task.Delay(1000, timeoutCts.Token);
+                var completedTask = await Task.WhenAny(tcs.Task, delayTask).ConfigureAwait(false);
 
-            var hookResponse = CreateHookResponse(response.Behavior, response.Message);
-            await WriteJsonResponseAsync(context.Response, 200, hookResponse).ConfigureAwait(false);
+                if (completedTask == tcs.Task)
+                {
+                    // 收到远程响应
+                    var response = await tcs.Task.ConfigureAwait(false);
+                    _logger.LogInformation("权限请求已响应: RequestId={RequestId}, Behavior={Behavior}", requestId, response.Behavior);
+
+                    var hookResponse = CreateHookResponse(response.Behavior, response.Message);
+                    try
+                    {
+                        await WriteJsonResponseAsync(context.Response, 200, hookResponse).ConfigureAwait(false);
+                    }
+                    catch (ObjectDisposedException ex)
+                    {
+                        _logger.LogWarning(ex, "HTTP 响应流已关闭（Claude Code 可能已超时），但权限响应已收到: {RequestId}", requestId);
+                    }
+
+                    return;
+                }
+
+                // 检测客户端是否仍在等待
+                if (!IsClientConnected(context))
+                {
+                    _requestTracker.Remove(requestId);
+                    _logger.LogInformation("等待远程响应期间用户已在终端操作，取消远程请求: {RequestId}", requestId);
+
+                    // 通知服务器此请求已在本地处理，让其他终端更新状态
+                    await SendLocallyHandledResponseAsync(requestId, messageId, cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+            }
         }
         catch (OperationCanceledException)
         {
@@ -265,6 +324,56 @@ internal sealed class HookListenerService : IAsyncDisposable
             _logger.LogWarning("权限请求超时，默认拒绝: {RequestId}", requestId);
             var denyResponse = CreateHookResponse("deny", "Request timed out");
             await WriteJsonResponseAsync(context.Response, 200, denyResponse).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// 检测 HTTP 客户端是否仍然连接.
+    /// 通过尝试 flush 输出流来探测，如果客户端已断开则抛出异常.
+    /// </summary>
+    private static bool IsClientConnected(HttpListenerContext context)
+    {
+        try
+        {
+            context.Response.OutputStream.Flush();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 向服务器发送"本地已处理"响应，触发服务器通知其他终端更新状态.
+    /// </summary>
+    private async Task SendLocallyHandledResponseAsync(string requestId, string correlationId, CancellationToken cancellationToken)
+    {
+        var responsePayload = new PermissionResponsePayload
+        {
+            RequestId = requestId,
+            Behavior = "locally_handled",
+            Message = "用户已在终端本地处理",
+        };
+
+        var wsMessage = new WebSocketMessage
+        {
+            MessageId = Guid.NewGuid().ToString(),
+            Type = MessageType.Response,
+            SourceDeviceId = _configService.Settings.DeviceId,
+            Payload = JsonSerializer.Serialize(responsePayload, ConsoleJsonContext.Default.PermissionResponsePayload),
+            CorrelationId = correlationId,
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+        };
+
+        var sent = await _serverConnection.SendMessageAsync(wsMessage, cancellationToken).ConfigureAwait(false);
+        if (sent)
+        {
+            _logger.LogInformation("已通知服务器权限请求在本地处理: {RequestId}", requestId);
+        }
+        else
+        {
+            _logger.LogWarning("通知服务器本地处理失败: {RequestId}", requestId);
         }
     }
 

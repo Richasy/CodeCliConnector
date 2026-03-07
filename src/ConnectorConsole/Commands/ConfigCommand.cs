@@ -43,6 +43,10 @@ internal sealed class ConfigCommand
             new TextPrompt<int>("Hook 监听端口:")
                 .DefaultValue(currentSettings.HookListenerPort));
 
+        var forwardDelay = AnsiConsole.Prompt(
+            new TextPrompt<int>("权限请求转发延迟（秒，0 为立即转发）:")
+                .DefaultValue(currentSettings.PermissionForwardDelaySeconds));
+
         var runAsService = await AnsiConsole.ConfirmAsync("注册为 Windows 服务（开机自启）?", currentSettings.RunAsWindowsService, cancellationToken).ConfigureAwait(false);
 
         await _configService.UpdateAsync(s =>
@@ -51,6 +55,7 @@ internal sealed class ConfigCommand
             s.PreSharedKey = string.IsNullOrWhiteSpace(psk) ? currentSettings.PreSharedKey : psk;
             s.DeviceName = string.IsNullOrWhiteSpace(deviceName) ? currentSettings.DeviceName : deviceName;
             s.HookListenerPort = port;
+            s.PermissionForwardDelaySeconds = Math.Max(0, forwardDelay);
             s.RunAsWindowsService = runAsService;
         }, cancellationToken).ConfigureAwait(false);
 
