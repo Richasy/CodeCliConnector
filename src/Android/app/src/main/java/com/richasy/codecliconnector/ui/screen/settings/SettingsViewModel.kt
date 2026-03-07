@@ -20,14 +20,14 @@ class SettingsViewModel @Inject constructor(
     private val apiClient: ApiClient,
 ) : ViewModel() {
 
-    val serverUrl: StateFlow<String> = settingsRepository.serverUrl
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+    private val _serverUrl = MutableStateFlow("")
+    val serverUrl: StateFlow<String> = _serverUrl
 
-    val preSharedKey: StateFlow<String> = settingsRepository.preSharedKey
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+    private val _preSharedKey = MutableStateFlow("")
+    val preSharedKey: StateFlow<String> = _preSharedKey
 
-    val deviceName: StateFlow<String> = settingsRepository.deviceName
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+    private val _deviceName = MutableStateFlow("")
+    val deviceName: StateFlow<String> = _deviceName
 
     val deviceId: StateFlow<String> = settingsRepository.deviceId
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
@@ -41,15 +41,26 @@ class SettingsViewModel @Inject constructor(
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message
 
+    init {
+        viewModelScope.launch {
+            _serverUrl.value = settingsRepository.serverUrl.first()
+            _preSharedKey.value = settingsRepository.preSharedKey.first()
+            _deviceName.value = settingsRepository.deviceName.first()
+        }
+    }
+
     fun setServerUrl(url: String) {
+        _serverUrl.value = url
         viewModelScope.launch { settingsRepository.setServerUrl(url) }
     }
 
     fun setPreSharedKey(key: String) {
+        _preSharedKey.value = key
         viewModelScope.launch { settingsRepository.setPreSharedKey(key) }
     }
 
     fun setDeviceName(name: String) {
+        _deviceName.value = name
         viewModelScope.launch { settingsRepository.setDeviceName(name) }
     }
 
