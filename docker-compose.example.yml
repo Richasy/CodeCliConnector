@@ -1,0 +1,40 @@
+services:
+  connector-server:
+    image: richasyz/codecliconnector-server:latest
+    # To build locally instead of pulling from Docker Hub, uncomment:
+    # build:
+    #   context: .
+    #   dockerfile: src/ConnectorWebServer/Dockerfile
+    container_name: codecliconnector-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - connector-data:/app/data
+    environment:
+      # [REQUIRED] Pre-shared key for device registration — change this!
+      - ServerSettings__PreSharedKey=your-secret-key-here
+
+      # [Optional] Token expiry in days (default: 3)
+      # - ServerSettings__TokenExpiryDays=3
+
+      # [Optional] Heartbeat timeout in seconds (default: 30)
+      # - ServerSettings__HeartbeatTimeoutSeconds=30
+
+      # [Optional] Pending message expiry in seconds (default: 300)
+      # - ServerSettings__MessageExpirySeconds=300
+
+      # [Optional] Old message cleanup in days (default: 7)
+      # - ServerSettings__MessageCleanupDays=7
+
+      # [Optional] Heartbeat check interval in seconds (default: 10)
+      # - ServerSettings__HeartbeatCheckIntervalSeconds=10
+
+      # [Optional] Message cleanup interval in seconds (default: 60)
+      # - ServerSettings__MessageCleanupIntervalSeconds=60
+
+      # [Optional] Log level (default: Information)
+      # - Logging__LogLevel__Default=Information
+
+volumes:
+  connector-data:

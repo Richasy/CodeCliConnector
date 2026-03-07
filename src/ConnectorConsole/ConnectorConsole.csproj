@@ -13,7 +13,7 @@
 
     <!-- NuGet Package Metadata -->
     <PackageId>CodeCliConnector</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <Authors>Richasy</Authors>
     <Description>Claude Code 远程连接器 CLI 工具，转发 Hook 通知和权限请求到远程服务器，支持从移动设备审批操作。</Description>
     <PackageIcon>logo.png</PackageIcon>

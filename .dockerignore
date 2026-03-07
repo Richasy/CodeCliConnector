@@ -1,0 +1,31 @@
+**/.git
+**/.vs
+**/.vscode
+**/.idea
+**/bin
+**/obj
+**/_build
+**/node_modules
+**/.gradle
+**/build
+**/local.properties
+
+# Android project
+src/Android
+
+# WinUI app (Windows-only)
+src/ConnectorApp
+
+# Console tool (not needed for server image)
+src/ConnectorConsole
+
+# Specs and docs
+specs
+*.md
+!src/Directory.Build.props
+!src/Directory.Packages.props
+
+# Docker files
+**/Dockerfile*
+docker-compose*.yml
+.dockerignore
