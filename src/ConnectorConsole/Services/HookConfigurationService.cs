@@ -15,8 +15,7 @@ internal sealed class HookConfigurationService
     private const string PermissionCommand = "curl -s -X POST http://localhost:{0}/permission -H \"Content-Type: application/json\" -d @-";
     private const int PermissionTimeout = 21600;
 
-    private static readonly string ClaudeSettingsPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "settings.json");
+    private static string ClaudeSettingsPath => Path.Combine(ConfigService.UserHome, ".claude", "settings.json");
 
     private readonly ConfigService _configService;
     private readonly ILogger<HookConfigurationService> _logger;

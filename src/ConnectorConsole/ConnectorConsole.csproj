@@ -13,7 +13,7 @@
 
     <!-- NuGet Package Metadata -->
     <PackageId>CodeCliConnector</PackageId>
-    <Version>0.1.1</Version>
+    <Version>0.1.2</Version>
     <Authors>Richasy</Authors>
     <Description>Claude Code 远程连接器 CLI 工具，转发 Hook 通知和权限请求到远程服务器，支持从移动设备审批操作。</Description>
     <PackageIcon>logo.png</PackageIcon>
@@ -39,6 +39,8 @@
     <PackageReference Include="Serilog.Extensions.Logging" />
     <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="Spectre.Console" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" />

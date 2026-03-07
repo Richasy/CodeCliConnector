@@ -11,10 +11,10 @@ namespace CodeCliConnector.Console.Services;
 /// </summary>
 internal sealed class ConfigService
 {
-    private static readonly string ConfigDir = Path.Combine(
+    private static string s_configDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ccc");
 
-    private static readonly string ConfigPath = Path.Combine(ConfigDir, "config.json");
+    private static string s_userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
     private readonly ILogger<ConfigService> _logger;
     private ConnectorSettings? _settings;
@@ -35,14 +35,41 @@ internal sealed class ConfigService
     /// <summary>
     /// 获取日志目录路径.
     /// </summary>
-    public static string LogDir => Path.Combine(ConfigDir, "logs");
+    public static string LogDir => Path.Combine(s_configDir, "logs");
+
+    /// <summary>
+    /// 获取用户主目录路径.
+    /// </summary>
+    public static string UserHome => s_userHome;
+
+    /// <summary>
+    /// 获取配置目录路径.
+    /// </summary>
+    public static string ConfigDir => s_configDir;
+
+    /// <summary>
+    /// 覆盖配置目录（用于 Windows 服务以 LocalSystem 运行时指定实际用户路径）.
+    /// </summary>
+    public static void OverrideConfigDir(string configDir)
+    {
+        s_configDir = configDir;
+    }
+
+    /// <summary>
+    /// 覆盖用户主目录（用于 Windows 服务以 LocalSystem 运行时指定实际用户路径）.
+    /// </summary>
+    public static void OverrideUserHome(string userHome)
+    {
+        s_userHome = userHome;
+    }
 
     /// <summary>
     /// 加载配置.
     /// </summary>
     public async Task LoadAsync(CancellationToken cancellationToken = default)
     {
-        if (!File.Exists(ConfigPath))
+        var configPath = Path.Combine(s_configDir, "config.json");
+        if (!File.Exists(configPath))
         {
             _logger.LogInformation("配置文件不存在，使用默认配置");
             _settings = new ConnectorSettings();
@@ -51,9 +78,9 @@ internal sealed class ConfigService
 
         try
         {
-            var json = await File.ReadAllTextAsync(ConfigPath, cancellationToken).ConfigureAwait(false);
+            var json = await File.ReadAllTextAsync(configPath, cancellationToken).ConfigureAwait(false);
             _settings = JsonSerializer.Deserialize(json, ConsoleJsonContext.Default.ConnectorSettings) ?? new ConnectorSettings();
-            _logger.LogInformation("配置已加载: {Path}", ConfigPath);
+            _logger.LogInformation("配置已加载: {Path}", configPath);
         }
         catch (Exception ex)
         {
@@ -67,10 +94,11 @@ internal sealed class ConfigService
     /// </summary>
     public async Task SaveAsync(CancellationToken cancellationToken = default)
     {
-        Directory.CreateDirectory(ConfigDir);
+        Directory.CreateDirectory(s_configDir);
+        var configPath = Path.Combine(s_configDir, "config.json");
         var json = JsonSerializer.Serialize(Settings, ConsoleJsonContext.Default.ConnectorSettings);
-        await File.WriteAllTextAsync(ConfigPath, json, cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("配置已保存: {Path}", ConfigPath);
+        await File.WriteAllTextAsync(configPath, json, cancellationToken).ConfigureAwait(false);
+        _logger.LogInformation("配置已保存: {Path}", configPath);
     }
 
     /// <summary>
