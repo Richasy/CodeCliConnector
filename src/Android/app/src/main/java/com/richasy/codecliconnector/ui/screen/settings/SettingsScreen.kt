@@ -20,6 +20,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -45,6 +46,7 @@ fun SettingsScreen(
     val deviceName by viewModel.deviceName.collectAsStateWithLifecycle()
     val deviceId by viewModel.deviceId.collectAsStateWithLifecycle()
     val tokenExpiresAt by viewModel.tokenExpiresAt.collectAsStateWithLifecycle()
+    val keepAwake by viewModel.keepAwake.collectAsStateWithLifecycle()
     val registering by viewModel.registering.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
 
@@ -158,6 +160,32 @@ fun SettingsScreen(
                             )
                         }
                     }
+                }
+            }
+
+            // 后台保活
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+                        Text("后台保活", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            text = "保持 CPU 和 WiFi 唤醒，防止息屏后断开连接（增加耗电）",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = keepAwake,
+                        onCheckedChange = { viewModel.setKeepAwake(it) },
+                    )
                 }
             }
 

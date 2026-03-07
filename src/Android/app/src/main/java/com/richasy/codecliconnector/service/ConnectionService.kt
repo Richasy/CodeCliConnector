@@ -2,7 +2,9 @@ package com.richasy.codecliconnector.service
 
 import android.app.Service
 import android.content.Intent
+import android.net.wifi.WifiManager
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import com.richasy.codecliconnector.data.db.NotificationEntity
 import com.richasy.codecliconnector.data.model.NotificationPayload
@@ -42,6 +44,9 @@ class ConnectionService : Service() {
     private var wsClient: WsClient? = null
     private var heartbeatJob: Job? = null
     private var connectionJob: Job? = null
+    private var keepAwakeJob: Job? = null
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
 
     companion object {
         private val _isConnected = MutableStateFlow(false)
@@ -94,14 +99,20 @@ class ConnectionService : Service() {
                 return@launch
             }
 
+            // 监听保活设置变化，动态获取/释放锁
+            keepAwakeJob?.cancel()
+            keepAwakeJob = scope.launch {
+                settingsRepository.keepAwake.collect { enabled ->
+                    if (enabled) acquireLocks() else releaseLocks()
+                }
+            }
+
             connectWithRetry(serverUrl, token, deviceId)
         }
     }
 
     private suspend fun connectWithRetry(serverUrl: String, token: String, deviceId: String) {
         var retryDelay = 2000L
-        var retryCount = 0
-        val maxRetries = 3
         while (true) {
             try {
                 _connectionError.value = null
@@ -111,7 +122,6 @@ class ConnectionService : Service() {
                 client.connect(serverUrl, token, onConnected = {
                     _isConnected.value = true
                     retryDelay = 2000L
-                    retryCount = 0
 
                     // 启动心跳
                     heartbeatJob?.cancel()
@@ -135,15 +145,8 @@ class ConnectionService : Service() {
                 wsClient = null
             }
 
-            retryCount++
-            if (retryCount >= maxRetries) {
-                Log.w(TAG, "已连续失败 $retryCount 次，停止重连")
-                _connectionError.value = "连接失败，已停止重连"
-                return
-            }
-
-            Log.i(TAG, "将在 ${retryDelay / 1000}s 后重连 ($retryCount/$maxRetries)")
-            _connectionError.value = "连接断开，${retryDelay / 1000}s 后重连 ($retryCount/$maxRetries)..."
+            Log.i(TAG, "将在 ${retryDelay / 1000}s 后重连")
+            _connectionError.value = "连接断开，${retryDelay / 1000}s 后重连..."
             delay(retryDelay)
             retryDelay = (retryDelay * 2).coerceAtMost(60_000L)
         }
@@ -273,9 +276,32 @@ class ConnectionService : Service() {
     private fun stopConnection() {
         connectionJob?.cancel()
         heartbeatJob?.cancel()
+        keepAwakeJob?.cancel()
         wsClient?.disconnect()
         wsClient = null
         _isConnected.value = false
         _connectionError.value = null
+        releaseLocks()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun acquireLocks() {
+        if (wakeLock == null) {
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "CCC::WebSocket")
+            wakeLock?.acquire()
+        }
+        if (wifiLock == null) {
+            val wm = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+            wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "CCC::WebSocket")
+            wifiLock?.acquire()
+        }
+    }
+
+    private fun releaseLocks() {
+        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = null
+        wifiLock?.let { if (it.isHeld) it.release() }
+        wifiLock = null
     }
 }

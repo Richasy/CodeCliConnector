@@ -3,6 +3,7 @@ package com.richasy.codecliconnector.data.repository
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -27,6 +28,7 @@ class SettingsRepository @Inject constructor(
         val ACCESS_TOKEN = stringPreferencesKey("access_token")
         val DEVICE_ID = stringPreferencesKey("device_id")
         val TOKEN_EXPIRES_AT = longPreferencesKey("token_expires_at")
+        val KEEP_AWAKE = booleanPreferencesKey("keep_awake")
     }
 
     val serverUrl: Flow<String> = context.dataStore.data.map { it[Keys.SERVER_URL] ?: "" }
@@ -35,6 +37,7 @@ class SettingsRepository @Inject constructor(
     val accessToken: Flow<String> = context.dataStore.data.map { it[Keys.ACCESS_TOKEN] ?: "" }
     val deviceId: Flow<String> = context.dataStore.data.map { it[Keys.DEVICE_ID] ?: "" }
     val tokenExpiresAt: Flow<Long> = context.dataStore.data.map { it[Keys.TOKEN_EXPIRES_AT] ?: 0L }
+    val keepAwake: Flow<Boolean> = context.dataStore.data.map { it[Keys.KEEP_AWAKE] == true }
 
     suspend fun setServerUrl(url: String) {
         context.dataStore.edit { it[Keys.SERVER_URL] = url }
@@ -62,5 +65,9 @@ class SettingsRepository @Inject constructor(
             it.remove(Keys.DEVICE_ID)
             it.remove(Keys.TOKEN_EXPIRES_AT)
         }
+    }
+
+    suspend fun setKeepAwake(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.KEEP_AWAKE] = enabled }
     }
 }

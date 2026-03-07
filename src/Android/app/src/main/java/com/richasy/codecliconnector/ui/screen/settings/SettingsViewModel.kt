@@ -35,6 +35,9 @@ class SettingsViewModel @Inject constructor(
     val tokenExpiresAt: StateFlow<Long> = settingsRepository.tokenExpiresAt
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
 
+    private val _keepAwake = MutableStateFlow(false)
+    val keepAwake: StateFlow<Boolean> = _keepAwake
+
     private val _registering = MutableStateFlow(false)
     val registering: StateFlow<Boolean> = _registering
 
@@ -46,6 +49,7 @@ class SettingsViewModel @Inject constructor(
             _serverUrl.value = settingsRepository.serverUrl.first()
             _preSharedKey.value = settingsRepository.preSharedKey.first()
             _deviceName.value = settingsRepository.deviceName.first()
+            _keepAwake.value = settingsRepository.keepAwake.first()
         }
     }
 
@@ -115,5 +119,10 @@ class SettingsViewModel @Inject constructor(
 
     fun clearMessage() {
         _message.value = null
+    }
+
+    fun setKeepAwake(enabled: Boolean) {
+        _keepAwake.value = enabled
+        viewModelScope.launch { settingsRepository.setKeepAwake(enabled) }
     }
 }
