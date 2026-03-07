@@ -221,6 +221,9 @@ internal sealed class HookListenerService : IAsyncDisposable
         _logger.LogInformation("收到权限请求: RequestId={RequestId}, Tool={ToolName}, Session={SessionId}",
             requestId, payload.ToolName, payload.SessionId);
 
+        // 提前创建待处理请求，以便延迟等待期间 PostToolUse 能找到并取消它
+        var tcs = _requestTracker.Create(requestId, payload.SessionId, payload.ToolName);
+
         // 延迟转发：等待用户在本地 Claude Code 终端操作
         var delaySeconds = _configService.Settings.PermissionForwardDelaySeconds;
         if (delaySeconds > 0)
@@ -234,12 +237,33 @@ internal sealed class HookListenerService : IAsyncDisposable
             }
             catch (OperationCanceledException)
             {
+                _requestTracker.Remove(requestId);
+                return;
+            }
+
+            // 延迟期间 PostToolUse 已触发本地处理，则跳过远程转发
+            if (tcs.Task.IsCompleted)
+            {
+                _logger.LogInformation("延迟期间用户已在终端处理权限请求，跳过远程转发: {RequestId}", requestId);
+                var localResponse = await tcs.Task.ConfigureAwait(false);
+                var behavior = localResponse.Behavior == "locally_handled" ? "allow" : localResponse.Behavior;
+                var hookResponse = CreateHookResponse(behavior, localResponse.Message);
+                try
+                {
+                    await WriteJsonResponseAsync(context.Response, 200, hookResponse).ConfigureAwait(false);
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Claude Code 可能已超时
+                }
+
                 return;
             }
 
             // 延迟结束后检测客户端是否仍在等待
             if (!IsClientConnected(context))
             {
+                _requestTracker.Remove(requestId);
                 _logger.LogInformation("用户已在终端处理权限请求，跳过远程转发: {RequestId}", requestId);
                 return;
             }
@@ -269,9 +293,6 @@ internal sealed class HookListenerService : IAsyncDisposable
             CorrelationId = messageId,
             Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
         };
-
-        // 创建待处理请求
-        var tcs = _requestTracker.Create(requestId, payload.SessionId, payload.ToolName);
 
         // 记录 requestId → correlationId 映射
         _requestCorrelationMap[requestId] = messageId;
