@@ -28,10 +28,22 @@ class NotificationsViewModel @Inject constructor(
     val pendingCount: StateFlow<Int> = repository.getPendingPermissionCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
+    private val _selectedNotificationId = MutableStateFlow<String?>(null)
     private val _selectedNotification = MutableStateFlow<NotificationEntity?>(null)
     val selectedNotification: StateFlow<NotificationEntity?> = _selectedNotification
 
+    init {
+        // 当通知列表更新时，同步刷新选中的通知实体
+        viewModelScope.launch {
+            notifications.collect { list ->
+                val selectedId = _selectedNotificationId.value ?: return@collect
+                _selectedNotification.value = list.find { it.id == selectedId }
+            }
+        }
+    }
+
     fun select(entity: NotificationEntity?) {
+        _selectedNotificationId.value = entity?.id
         _selectedNotification.value = entity
     }
 
@@ -40,6 +52,7 @@ class NotificationsViewModel @Inject constructor(
             val behavior = if (allow) "allow" else "deny"
             val status = if (allow) "approved" else "denied"
             repository.updateStatus(entity.id, status)
+            _selectedNotificationId.value = null
             _selectedNotification.value = null
 
             val intent = Intent(context, ConnectionService::class.java).apply {
