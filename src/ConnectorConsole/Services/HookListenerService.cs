@@ -22,6 +22,12 @@ internal sealed class HookListenerService : IAsyncDisposable
     private readonly PendingRequestTracker _requestTracker;
     private readonly ILogger<HookListenerService> _logger;
 
+    /// <summary>
+    /// 存储 requestId → correlationId（WebSocket 消息的 messageId）的映射，
+    /// 用于在 PostToolUse 到来时发送 locally_handled 通知.
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _requestCorrelationMap = new();
+
     private HttpListener? _listener;
     private CancellationTokenSource? _cts;
     private Task? _listenTask;
@@ -143,6 +149,9 @@ internal sealed class HookListenerService : IAsyncDisposable
                 case "/permission":
                     await HandlePermissionRequestAsync(context, cancellationToken).ConfigureAwait(false);
                     break;
+                case "/tool-completed":
+                    await HandleToolCompletedAsync(context, cancellationToken).ConfigureAwait(false);
+                    break;
                 default:
                     await WriteResponseAsync(context.Response, 404, "Not Found").ConfigureAwait(false);
                     break;
@@ -262,13 +271,17 @@ internal sealed class HookListenerService : IAsyncDisposable
         };
 
         // 创建待处理请求
-        var tcs = _requestTracker.Create(requestId);
+        var tcs = _requestTracker.Create(requestId, payload.SessionId, payload.ToolName);
+
+        // 记录 requestId → correlationId 映射
+        _requestCorrelationMap[requestId] = messageId;
 
         // 发送到服务器
         var sent = await _serverConnection.SendMessageAsync(wsMessage, cancellationToken).ConfigureAwait(false);
         if (!sent)
         {
             _requestTracker.Remove(requestId);
+            _requestCorrelationMap.TryRemove(requestId, out _);
             _logger.LogWarning("权限请求发送失败，默认拒绝: {RequestId}", requestId);
             var denyResponse = CreateHookResponse("deny", "Failed to send permission request to server");
             await WriteJsonResponseAsync(context.Response, 200, denyResponse).ConfigureAwait(false);
@@ -289,11 +302,14 @@ internal sealed class HookListenerService : IAsyncDisposable
 
                 if (completedTask == tcs.Task)
                 {
-                    // 收到远程响应
+                    // 收到远程响应（或 PostToolUse 触发的 locally_handled）
                     var response = await tcs.Task.ConfigureAwait(false);
+                    _requestCorrelationMap.TryRemove(requestId, out _);
                     _logger.LogInformation("权限请求已响应: RequestId={RequestId}, Behavior={Behavior}", requestId, response.Behavior);
 
-                    var hookResponse = CreateHookResponse(response.Behavior, response.Message);
+                    // locally_handled 意味着工具已在本地执行完毕，映射为 allow
+                    var behavior = response.Behavior == "locally_handled" ? "allow" : response.Behavior;
+                    var hookResponse = CreateHookResponse(behavior, response.Message);
                     try
                     {
                         await WriteJsonResponseAsync(context.Response, 200, hookResponse).ConfigureAwait(false);
@@ -310,6 +326,7 @@ internal sealed class HookListenerService : IAsyncDisposable
                 if (!IsClientConnected(context))
                 {
                     _requestTracker.Remove(requestId);
+                    _requestCorrelationMap.TryRemove(requestId, out _);
                     _logger.LogInformation("等待远程响应期间用户已在终端操作，取消远程请求: {RequestId}", requestId);
 
                     // 通知服务器此请求已在本地处理，让其他终端更新状态
@@ -321,9 +338,44 @@ internal sealed class HookListenerService : IAsyncDisposable
         catch (OperationCanceledException)
         {
             _requestTracker.Remove(requestId);
+            _requestCorrelationMap.TryRemove(requestId, out _);
             _logger.LogWarning("权限请求超时，默认拒绝: {RequestId}", requestId);
             var denyResponse = CreateHookResponse("deny", "Request timed out");
             await WriteJsonResponseAsync(context.Response, 200, denyResponse).ConfigureAwait(false);
+        }
+    }
+
+    private async Task HandleToolCompletedAsync(HttpListenerContext context, CancellationToken cancellationToken)
+    {
+        var payload = await ReadPayloadAsync(context.Request, cancellationToken).ConfigureAwait(false);
+        if (payload is null)
+        {
+            await WriteResponseAsync(context.Response, 400, "Invalid payload").ConfigureAwait(false);
+            return;
+        }
+
+        // PostToolUse 是 async fire-and-forget hook，先立即返回
+        await WriteResponseAsync(context.Response, 200, string.Empty).ConfigureAwait(false);
+
+        if (string.IsNullOrEmpty(payload.SessionId) || string.IsNullOrEmpty(payload.ToolName))
+        {
+            return;
+        }
+
+        // 通过 session_id + tool_name 查找匹配的 pending permission request
+        var requestId = _requestTracker.TryCompleteByToolKey(payload.SessionId, payload.ToolName);
+        if (requestId is null)
+        {
+            return;
+        }
+
+        _logger.LogInformation("PostToolUse 触发本地处理: SessionId={SessionId}, Tool={ToolName}, RequestId={RequestId}",
+            payload.SessionId, payload.ToolName, requestId);
+
+        // 通知服务器此请求已在本地处理
+        if (_requestCorrelationMap.TryRemove(requestId, out var correlationId))
+        {
+            await SendLocallyHandledResponseAsync(requestId, correlationId, cancellationToken).ConfigureAwait(false);
         }
     }
 

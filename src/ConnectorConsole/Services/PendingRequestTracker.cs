@@ -12,6 +12,7 @@ namespace CodeCliConnector.Console.Services;
 internal sealed class PendingRequestTracker : IDisposable
 {
     private readonly ConcurrentDictionary<string, TaskCompletionSource<PermissionResponsePayload>> _pending = new();
+    private readonly ConcurrentDictionary<string, string> _toolKeyToRequestId = new();
     private readonly ILogger<PendingRequestTracker> _logger;
     private bool _disposed;
 
@@ -26,10 +27,17 @@ internal sealed class PendingRequestTracker : IDisposable
     /// <summary>
     /// 创建一个待处理的权限请求.
     /// </summary>
-    public TaskCompletionSource<PermissionResponsePayload> Create(string requestId)
+    public TaskCompletionSource<PermissionResponsePayload> Create(string requestId, string? sessionId = null, string? toolName = null)
     {
         var tcs = new TaskCompletionSource<PermissionResponsePayload>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[requestId] = tcs;
+
+        if (!string.IsNullOrEmpty(sessionId) && !string.IsNullOrEmpty(toolName))
+        {
+            var toolKey = $"{sessionId}:{toolName}";
+            _toolKeyToRequestId[toolKey] = requestId;
+        }
+
         _logger.LogDebug("创建待处理请求: {RequestId}", requestId);
         return tcs;
     }
@@ -48,6 +56,22 @@ internal sealed class PendingRequestTracker : IDisposable
 
         _logger.LogWarning("未找到待处理请求: {RequestId}", requestId);
         return false;
+    }
+
+    /// <summary>
+    /// 通过 session_id + tool_name 查找并标记为本地已处理.
+    /// </summary>
+    public string? TryCompleteByToolKey(string sessionId, string toolName)
+    {
+        var toolKey = $"{sessionId}:{toolName}";
+        if (_toolKeyToRequestId.TryRemove(toolKey, out var requestId) && _pending.TryRemove(requestId, out var tcs))
+        {
+            tcs.TrySetResult(new PermissionResponsePayload { RequestId = requestId, Behavior = "locally_handled" });
+            _logger.LogInformation("工具完成，本地处理: ToolKey={ToolKey}, RequestId={RequestId}", toolKey, requestId);
+            return requestId;
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -77,5 +101,6 @@ internal sealed class PendingRequestTracker : IDisposable
         }
 
         _pending.Clear();
+        _toolKeyToRequestId.Clear();
     }
 }

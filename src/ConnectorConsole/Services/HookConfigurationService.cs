@@ -13,6 +13,7 @@ internal sealed class HookConfigurationService
 {
     private const string NotificationCommand = "curl -s -X POST http://localhost:{0}/notification -H \"Content-Type: application/json\" -d @-";
     private const string PermissionCommand = "curl -s -X POST http://localhost:{0}/permission -H \"Content-Type: application/json\" -d @-";
+    private const string ToolCompletedCommand = "curl -s -X POST http://localhost:{0}/tool-completed -H \"Content-Type: application/json\" -d @-";
     private const int PermissionTimeout = 21600;
 
     private static string ClaudeSettingsPath => Path.Combine(ConfigService.UserHome, ".claude", "settings.json");
@@ -59,6 +60,14 @@ internal sealed class HookConfigurationService
             isAsync: false);
         hooks["PermissionRequest"] = permissionGroup;
 
+        // PostToolUse hook（用于检测权限已在本地批准并执行完成）
+        var toolCompletedGroup = CreateHookGroup(
+            string.Empty,
+            string.Format(ToolCompletedCommand, port),
+            timeout: null,
+            isAsync: true);
+        hooks["PostToolUse"] = toolCompletedGroup;
+
         await SaveSettingsNodeAsync(root, cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Hook 配置已安装到 {Path}", ClaudeSettingsPath);
     }
@@ -79,9 +88,11 @@ internal sealed class HookConfigurationService
         var port = _configService.Settings.HookListenerPort;
         var notifCmd = string.Format(NotificationCommand, port);
         var permCmd = string.Format(PermissionCommand, port);
+        var toolCompletedCmd = string.Format(ToolCompletedCommand, port);
 
         RemoveMatchingHook(hooks, "Notification", notifCmd);
         RemoveMatchingHook(hooks, "PermissionRequest", permCmd);
+        RemoveMatchingHook(hooks, "PostToolUse", toolCompletedCmd);
 
         await SaveSettingsNodeAsync(root, cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Hook 配置已从 {Path} 卸载", ClaudeSettingsPath);
@@ -106,8 +117,10 @@ internal sealed class HookConfigurationService
 
         var port = _configService.Settings.HookListenerPort;
         var permCmd = string.Format(PermissionCommand, port);
+        var toolCompletedCmd = string.Format(ToolCompletedCommand, port);
 
-        return HasMatchingHook(hooks, "PermissionRequest", permCmd);
+        return HasMatchingHook(hooks, "PermissionRequest", permCmd)
+            && HasMatchingHook(hooks, "PostToolUse", toolCompletedCmd);
     }
 
     private static JsonArray CreateHookGroup(string matcher, string command, int? timeout, bool isAsync)
