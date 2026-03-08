@@ -76,6 +76,19 @@ public sealed partial class ConnectorDataService
     }
 
     /// <summary>
+    /// 按 CorrelationId 标记所有相关 pending 消息为已处理.
+    /// </summary>
+    public async Task MarkPendingMessagesByCorrelationIdAsync(string correlationId, CancellationToken cancellationToken = default)
+    {
+        await using var cmd = _database.CreateCommand(
+            "UPDATE \"Messages\" SET \"Status\" = @processed WHERE \"CorrelationId\" = @correlationId AND \"Status\" = @pending");
+        cmd.Parameters.AddWithValue("@processed", (int)MessageStatus.Processed);
+        cmd.Parameters.AddWithValue("@correlationId", correlationId);
+        cmd.Parameters.AddWithValue("@pending", (int)MessageStatus.Pending);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// 标记过期消息.
     /// </summary>
     public async Task<int> ExpireMessagesAsync(CancellationToken cancellationToken = default)

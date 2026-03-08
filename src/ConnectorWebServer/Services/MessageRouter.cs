@@ -115,8 +115,9 @@ public sealed class MessageRouter
 
         _logger.LogInformation("设备 {DeviceId} 认领响应 {CorrelationId}", message.SourceDeviceId, message.CorrelationId);
 
-        // 标记原始消息为已处理
+        // 标记原始消息及所有相关 pending 消息为已处理（避免离线设备上线后收到过时请求）
         await _dataService.MarkMessageProcessedAsync(message.CorrelationId, cancellationToken).ConfigureAwait(false);
+        await _dataService.MarkPendingMessagesByCorrelationIdAsync(message.CorrelationId, cancellationToken).ConfigureAwait(false);
 
         // 将响应转发给目标设备（通常是 ClaudeCode 实例）
         if (!string.IsNullOrEmpty(message.TargetDeviceId))

@@ -16,6 +16,7 @@ public sealed class WebSocketHandler
     private readonly ConnectionManager _connectionManager;
     private readonly ConnectorDataService _dataService;
     private readonly MessageRouter _messageRouter;
+    private readonly ResponseTracker _responseTracker;
     private readonly ILogger<WebSocketHandler> _logger;
     private readonly JsonTypeInfo<WebSocketMessage> _jsonTypeInfo;
 
@@ -26,12 +27,14 @@ public sealed class WebSocketHandler
         ConnectionManager connectionManager,
         ConnectorDataService dataService,
         MessageRouter messageRouter,
+        ResponseTracker responseTracker,
         ILogger<WebSocketHandler> logger,
         JsonTypeInfo<WebSocketMessage> jsonTypeInfo)
     {
         _connectionManager = connectionManager;
         _dataService = dataService;
         _messageRouter = messageRouter;
+        _responseTracker = responseTracker;
         _logger = logger;
         _jsonTypeInfo = jsonTypeInfo;
     }
@@ -114,6 +117,14 @@ public sealed class WebSocketHandler
 
         foreach (var msg in pendingMessages)
         {
+            // 跳过已被其他设备处理（认领响应）的消息，避免投递过时的权限请求
+            if (!string.IsNullOrEmpty(msg.CorrelationId) && _responseTracker.IsClaimed(msg.CorrelationId))
+            {
+                await _dataService.MarkMessageProcessedAsync(msg.MessageId, cancellationToken).ConfigureAwait(false);
+                _logger.LogDebug("跳过已处理的离线消息: {MessageId}, CorrelationId={CorrelationId}", msg.MessageId, msg.CorrelationId);
+                continue;
+            }
+
             var wsMessage = new WebSocketMessage
             {
                 MessageId = msg.MessageId,
