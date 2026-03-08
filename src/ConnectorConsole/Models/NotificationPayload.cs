@@ -8,6 +8,11 @@ namespace CodeCliConnector.Console.Models;
 internal sealed class NotificationPayload
 {
     /// <summary>
+    /// Hook 事件类型（如 "notification"、"stop"），用于区分不同来源的通知.
+    /// </summary>
+    public string? HookEvent { get; set; }
+
+    /// <summary>
     /// 会话 ID.
     /// </summary>
     public string? SessionId { get; set; }

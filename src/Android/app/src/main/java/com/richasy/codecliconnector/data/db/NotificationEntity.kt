@@ -24,7 +24,9 @@ data class NotificationEntity(
     val permissionMode: String?,
     val toolName: String?,
     val toolInput: String?,
-    /** 处理状态: "pending", "approved", "denied", "expired" */
+    /** 权限建议列表 JSON 字符串 */
+    val permissionSuggestions: String? = null,
+    /** 处理状态: "pending", "approved", "denied", "expired", "handled_elsewhere" */
     val status: String = "pending",
     val createdAt: Long = System.currentTimeMillis(),
     /** WebSocket 消息的 correlationId，用于发送响应 */

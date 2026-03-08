@@ -41,4 +41,9 @@ internal sealed class PermissionRequestPayload
     /// 请求时间戳（Unix 毫秒）.
     /// </summary>
     public long ReceivedTimestampMs { get; set; }
+
+    /// <summary>
+    /// 权限建议列表（如"总是允许 Bash"等选项，序列化为 JSON 字符串传输）.
+    /// </summary>
+    public string? PermissionSuggestions { get; set; }
 }

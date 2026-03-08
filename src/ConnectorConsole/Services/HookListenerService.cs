@@ -152,6 +152,9 @@ internal sealed class HookListenerService : IAsyncDisposable
                 case "/tool-completed":
                     await HandleToolCompletedAsync(context, cancellationToken).ConfigureAwait(false);
                     break;
+                case "/stop":
+                    await HandleStopAsync(context, cancellationToken).ConfigureAwait(false);
+                    break;
                 default:
                     await WriteResponseAsync(context.Response, 404, "Not Found").ConfigureAwait(false);
                     break;
@@ -182,6 +185,14 @@ internal sealed class HookListenerService : IAsyncDisposable
 
         _logger.LogInformation("收到通知: Type={NotificationType}, Title={Title}, Message={Message}",
             payload.NotificationType, payload.Title, payload.Message);
+
+        // 权限提示通知由 PermissionRequest hook 独立处理，跳过以避免重复
+        if (string.Equals(payload.NotificationType, "permission_prompt", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogDebug("跳过 permission_prompt 通知（已由 PermissionRequest hook 处理）");
+            await WriteResponseAsync(context.Response, 200, string.Empty).ConfigureAwait(false);
+            return;
+        }
 
         // 构造通知消息载荷
         var notificationPayload = new NotificationPayload
@@ -220,6 +231,8 @@ internal sealed class HookListenerService : IAsyncDisposable
         var requestId = Guid.NewGuid().ToString();
         _logger.LogInformation("收到权限请求: RequestId={RequestId}, Tool={ToolName}, Session={SessionId}",
             requestId, payload.ToolName, payload.SessionId);
+        _logger.LogDebug("权限请求详情: PermissionSuggestions={Suggestions}",
+            payload.PermissionSuggestions ?? "(空)");
 
         // 提前创建待处理请求，以便延迟等待期间 PostToolUse 能找到并取消它
         var tcs = _requestTracker.Create(requestId, payload.SessionId, payload.ToolName);
@@ -246,8 +259,7 @@ internal sealed class HookListenerService : IAsyncDisposable
             {
                 _logger.LogInformation("延迟期间用户已在终端处理权限请求，跳过远程转发: {RequestId}", requestId);
                 var localResponse = await tcs.Task.ConfigureAwait(false);
-                var behavior = localResponse.Behavior == "locally_handled" ? "allow" : localResponse.Behavior;
-                var hookResponse = CreateHookResponse(behavior, localResponse.Message);
+                var hookResponse = CreateHookResponse(localResponse);
                 try
                 {
                     await WriteJsonResponseAsync(context.Response, 200, hookResponse).ConfigureAwait(false);
@@ -281,6 +293,7 @@ internal sealed class HookListenerService : IAsyncDisposable
             ToolName = payload.ToolName,
             ToolInput = payload.ToolInput,
             ReceivedTimestampMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            PermissionSuggestions = payload.PermissionSuggestions,
         };
 
         var messageId = Guid.NewGuid().ToString();
@@ -304,7 +317,7 @@ internal sealed class HookListenerService : IAsyncDisposable
             _requestTracker.Remove(requestId);
             _requestCorrelationMap.TryRemove(requestId, out _);
             _logger.LogWarning("权限请求发送失败，默认拒绝: {RequestId}", requestId);
-            var denyResponse = CreateHookResponse("deny", "Failed to send permission request to server");
+            var denyResponse = CreateHookResponse(new PermissionResponsePayload { RequestId = requestId, Behavior = "deny", Message = "Failed to send permission request to server" });
             await WriteJsonResponseAsync(context.Response, 200, denyResponse).ConfigureAwait(false);
             return;
         }
@@ -325,12 +338,18 @@ internal sealed class HookListenerService : IAsyncDisposable
                 {
                     // 收到远程响应（或 PostToolUse 触发的 locally_handled）
                     var response = await tcs.Task.ConfigureAwait(false);
-                    _requestCorrelationMap.TryRemove(requestId, out _);
+                    var hadCorrelation = _requestCorrelationMap.TryRemove(requestId, out _);
                     _logger.LogInformation("权限请求已响应: RequestId={RequestId}, Behavior={Behavior}", requestId, response.Behavior);
 
+                    // 如果是 PostToolUse 触发的本地处理，需要通知服务器让安卓端更新状态
+                    // （PostToolUse 走 TryCompleteByToolKey 可能抢先完成 tcs，但 correlationMap 还未被它移除）
+                    if (response.Behavior == "locally_handled" && hadCorrelation)
+                    {
+                        await SendLocallyHandledResponseAsync(requestId, messageId, cancellationToken).ConfigureAwait(false);
+                    }
+
                     // locally_handled 意味着工具已在本地执行完毕，映射为 allow
-                    var behavior = response.Behavior == "locally_handled" ? "allow" : response.Behavior;
-                    var hookResponse = CreateHookResponse(behavior, response.Message);
+                    var hookResponse = CreateHookResponse(response);
                     try
                     {
                         await WriteJsonResponseAsync(context.Response, 200, hookResponse).ConfigureAwait(false);
@@ -361,7 +380,7 @@ internal sealed class HookListenerService : IAsyncDisposable
             _requestTracker.Remove(requestId);
             _requestCorrelationMap.TryRemove(requestId, out _);
             _logger.LogWarning("权限请求超时，默认拒绝: {RequestId}", requestId);
-            var denyResponse = CreateHookResponse("deny", "Request timed out");
+            var denyResponse = CreateHookResponse(new PermissionResponsePayload { RequestId = requestId, Behavior = "deny", Message = "Request timed out" });
             await WriteJsonResponseAsync(context.Response, 200, denyResponse).ConfigureAwait(false);
         }
     }
@@ -398,6 +417,49 @@ internal sealed class HookListenerService : IAsyncDisposable
         {
             await SendLocallyHandledResponseAsync(requestId, correlationId, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private async Task HandleStopAsync(HttpListenerContext context, CancellationToken cancellationToken)
+    {
+        var payload = await ReadPayloadAsync(context.Request, cancellationToken).ConfigureAwait(false);
+        if (payload is null)
+        {
+            await WriteResponseAsync(context.Response, 400, "Invalid payload").ConfigureAwait(false);
+            return;
+        }
+
+        _logger.LogInformation("收到 Stop 事件: SessionId={SessionId}, StopHookActive={StopHookActive}",
+            payload.SessionId, payload.StopHookActive);
+
+        // 截取最后消息的前 200 字符作为通知摘要
+        var lastMessage = payload.LastAssistantMessage;
+        var summary = lastMessage is { Length: > 200 }
+            ? string.Concat(lastMessage.AsSpan(0, 200), "...")
+            : lastMessage;
+
+        // 构造通知消息载荷
+        var notificationPayload = new NotificationPayload
+        {
+            HookEvent = "stop",
+            SessionId = payload.SessionId,
+            Cwd = payload.Cwd,
+            Title = "Claude 已完成",
+            Message = summary,
+        };
+
+        var wsMessage = new WebSocketMessage
+        {
+            MessageId = Guid.NewGuid().ToString(),
+            Type = MessageType.Notification,
+            SourceDeviceId = _configService.Settings.DeviceId,
+            Payload = JsonSerializer.Serialize(notificationPayload, ConsoleJsonContext.Default.NotificationPayload),
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+        };
+
+        await _serverConnection.SendMessageAsync(wsMessage, cancellationToken).ConfigureAwait(false);
+
+        // Stop 是 fire-and-forget，立即返回
+        await WriteResponseAsync(context.Response, 200, string.Empty).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -450,8 +512,9 @@ internal sealed class HookListenerService : IAsyncDisposable
         }
     }
 
-    private static PermissionRequestHookResponse CreateHookResponse(string behavior, string? message)
+    private static PermissionRequestHookResponse CreateHookResponse(PermissionResponsePayload response)
     {
+        var behavior = response.Behavior == "locally_handled" ? "allow" : response.Behavior;
         return new PermissionRequestHookResponse
         {
             HookSpecificOutput = new PermissionRequestHookOutput
@@ -460,7 +523,9 @@ internal sealed class HookListenerService : IAsyncDisposable
                 Decision = new PermissionDecisionDetail
                 {
                     Behavior = behavior,
-                    Message = message,
+                    Message = response.Message,
+                    UpdatedPermissions = response.UpdatedPermissions,
+                    Interrupt = response.Interrupt,
                 },
             },
         };

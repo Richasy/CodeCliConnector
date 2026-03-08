@@ -73,7 +73,8 @@ class ConnectionService : Service() {
                 val behavior = intent.getStringExtra("behavior") ?: "deny"
                 val correlationId = intent.getStringExtra("correlation_id")
                 val sourceDeviceId = intent.getStringExtra("source_device_id")
-                scope.launch { sendPermissionResponse(requestId, behavior, correlationId, sourceDeviceId) }
+                val updatedPermissions = intent.getStringExtra("updated_permissions")
+                scope.launch { sendPermissionResponse(requestId, behavior, correlationId, sourceDeviceId, updatedPermissions) }
             }
         }
         return START_STICKY
@@ -183,6 +184,7 @@ class ConnectionService : Service() {
                     permissionMode = permReq.permissionMode,
                     toolName = permReq.toolName,
                     toolInput = permReq.toolInput,
+                    permissionSuggestions = permReq.permissionSuggestions,
                     status = "pending",
                     correlationId = message.correlationId,
                 )
@@ -195,9 +197,10 @@ class ConnectionService : Service() {
         // 普通通知
         try {
             val notif = json.decodeFromString(NotificationPayload.serializer(), payload)
+            val hookEvent = notif.hookEvent ?: "notification"
             val entity = NotificationEntity(
                 id = message.messageId,
-                hookEvent = "notification",
+                hookEvent = hookEvent,
                 sourceDeviceId = message.sourceDeviceId,
                 sessionId = notif.sessionId,
                 cwd = notif.cwd,
@@ -212,7 +215,12 @@ class ConnectionService : Service() {
                 correlationId = message.correlationId,
             )
             notificationRepository.insert(entity)
-            notificationHelper.sendInfoAlert(notif.title, notif.message)
+
+            if (hookEvent == "stop") {
+                notificationHelper.sendStopAlert(notif.title, notif.message)
+            } else {
+                notificationHelper.sendInfoAlert(notif.title, notif.message)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "解析通知载荷失败", e)
         }
@@ -250,11 +258,13 @@ class ConnectionService : Service() {
         behavior: String,
         correlationId: String?,
         sourceDeviceId: String?,
+        updatedPermissions: String? = null,
     ) {
         val deviceId = settingsRepository.deviceId.first()
         val responsePayload = PermissionResponsePayload(
             requestId = requestId,
             behavior = behavior,
+            updatedPermissions = updatedPermissions,
         )
         val payloadJson = json.encodeToString(PermissionResponsePayload.serializer(), responsePayload)
         val wsMsg = WebSocketMessage(

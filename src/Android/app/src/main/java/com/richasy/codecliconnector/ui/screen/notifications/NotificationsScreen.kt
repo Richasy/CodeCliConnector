@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DesktopWindows
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Security
@@ -113,6 +114,7 @@ private fun NotificationCard(
     onClick: () -> Unit,
 ) {
     val isPermission = entity.hookEvent == "permission_request"
+    val isStop = entity.hookEvent == "stop"
     val isPending = entity.status == "pending"
 
     Card(
@@ -133,10 +135,18 @@ private fun NotificationCard(
             verticalAlignment = Alignment.Top,
         ) {
             Icon(
-                imageVector = if (isPermission) Icons.Default.Security else Icons.Default.Info,
+                imageVector = when {
+                    isPermission -> Icons.Default.Security
+                    isStop -> Icons.Default.DoneAll
+                    else -> Icons.Default.Info
+                },
                 contentDescription = null,
                 modifier = Modifier.size(24.dp),
-                tint = if (isPermission) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
+                tint = when {
+                    isPermission -> MaterialTheme.colorScheme.primary
+                    isStop -> Color(0xFF4CAF50)
+                    else -> MaterialTheme.colorScheme.secondary
+                },
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(

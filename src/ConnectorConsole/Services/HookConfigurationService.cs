@@ -14,6 +14,7 @@ internal sealed class HookConfigurationService
     private const string NotificationCommand = "curl -s -X POST http://localhost:{0}/notification -H \"Content-Type: application/json\" -d @-";
     private const string PermissionCommand = "curl -s -X POST http://localhost:{0}/permission -H \"Content-Type: application/json\" -d @-";
     private const string ToolCompletedCommand = "curl -s -X POST http://localhost:{0}/tool-completed -H \"Content-Type: application/json\" -d @-";
+    private const string StopCommand = "curl -s -X POST http://localhost:{0}/stop -H \"Content-Type: application/json\" -d @-";
     private const int PermissionTimeout = 21600;
 
     private static string ClaudeSettingsPath => Path.Combine(ConfigService.UserHome, ".claude", "settings.json");
@@ -68,6 +69,14 @@ internal sealed class HookConfigurationService
             isAsync: true);
         hooks["PostToolUse"] = toolCompletedGroup;
 
+        // Stop hook（Claude 会话结束时通知）
+        var stopGroup = CreateHookGroup(
+            string.Empty,
+            string.Format(StopCommand, port),
+            timeout: null,
+            isAsync: true);
+        hooks["Stop"] = stopGroup;
+
         await SaveSettingsNodeAsync(root, cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Hook 配置已安装到 {Path}", ClaudeSettingsPath);
     }
@@ -89,10 +98,12 @@ internal sealed class HookConfigurationService
         var notifCmd = string.Format(NotificationCommand, port);
         var permCmd = string.Format(PermissionCommand, port);
         var toolCompletedCmd = string.Format(ToolCompletedCommand, port);
+        var stopCmd = string.Format(StopCommand, port);
 
         RemoveMatchingHook(hooks, "Notification", notifCmd);
         RemoveMatchingHook(hooks, "PermissionRequest", permCmd);
         RemoveMatchingHook(hooks, "PostToolUse", toolCompletedCmd);
+        RemoveMatchingHook(hooks, "Stop", stopCmd);
 
         await SaveSettingsNodeAsync(root, cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Hook 配置已从 {Path} 卸载", ClaudeSettingsPath);
@@ -118,9 +129,11 @@ internal sealed class HookConfigurationService
         var port = _configService.Settings.HookListenerPort;
         var permCmd = string.Format(PermissionCommand, port);
         var toolCompletedCmd = string.Format(ToolCompletedCommand, port);
+        var stopCmd = string.Format(StopCommand, port);
 
         return HasMatchingHook(hooks, "PermissionRequest", permCmd)
-            && HasMatchingHook(hooks, "PostToolUse", toolCompletedCmd);
+            && HasMatchingHook(hooks, "PostToolUse", toolCompletedCmd)
+            && HasMatchingHook(hooks, "Stop", stopCmd);
     }
 
     private static JsonArray CreateHookGroup(string matcher, string command, int? timeout, bool isAsync)

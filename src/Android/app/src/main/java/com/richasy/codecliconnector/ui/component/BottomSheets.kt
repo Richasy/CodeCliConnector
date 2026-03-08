@@ -12,16 +12,26 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.richasy.codecliconnector.data.db.NotificationEntity
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+
+private val lenientJson = Json { ignoreUnknownKeys = true }
 
 /** 权限请求详情底部弹出页 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -30,9 +40,13 @@ fun PermissionRequestSheet(
     entity: NotificationEntity,
     onAllow: () -> Unit,
     onDeny: () -> Unit,
+    onAllowWithPermission: (updatedPermissions: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val suggestions = remember(entity.permissionSuggestions) {
+        parseSuggestionsRaw(entity.permissionSuggestions)
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -91,6 +105,7 @@ fun PermissionRequestSheet(
 
             // 操作按钮（仅对仍为 pending 状态的请求展示）
             if (entity.status == "pending") {
+                // 主操作按钮
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -106,6 +121,23 @@ fun PermissionRequestSheet(
                         modifier = Modifier.weight(1f),
                     ) {
                         Text("同意")
+                    }
+                }
+
+                // "总是允许"等建议选项
+                if (suggestions.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        suggestions.forEach { (label, rawJson) ->
+                            FilledTonalButton(
+                                onClick = { onAllowWithPermission(rawJson) },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(label)
+                            }
+                        }
                     }
                 }
             } else {
@@ -183,6 +215,59 @@ private fun LabelValue(label: String, value: String) {
             text = value,
             style = MaterialTheme.typography.bodyMedium,
         )
+    }
+}
+
+/**
+ * 解析权限建议原始 JSON 数组，返回 (显示标签, 原始JSON字符串) 列表.
+ * 直接操作 JsonElement 以保留所有字段，确保回传完整性.
+ */
+private fun parseSuggestionsRaw(json: String?): List<Pair<String, String>> {
+    if (json.isNullOrBlank()) return emptyList()
+    return try {
+        val array = lenientJson.parseToJsonElement(json).jsonArray
+        array.map { element ->
+            val obj = element.jsonObject
+            val label = formatSuggestionLabel(obj)
+            // 包装为单元素数组，因为 updatedPermissions 期望的是数组格式
+            val rawJson = JsonArray(listOf(element)).toString()
+            label to rawJson
+        }
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
+/** 将建议项格式化为用户可读标签 */
+private fun formatSuggestionLabel(obj: JsonObject): String {
+    val type = obj["type"]?.jsonPrimitive?.content
+    return when (type) {
+        "toolAlwaysAllow" -> {
+            val tool = obj["tool"]?.jsonPrimitive?.content ?: "未知工具"
+            "总是允许 $tool"
+        }
+        "prefixAlwaysAllow" -> {
+            val tool = obj["tool"]?.jsonPrimitive?.content ?: "未知工具"
+            "总是允许 $tool (前缀匹配)"
+        }
+        "addDirectories" -> {
+            val dirs = try {
+                obj["directories"]?.jsonArray?.map { it.jsonPrimitive.content }
+            } catch (_: Exception) { null }
+            val dirText = dirs?.joinToString(", ") ?: "未知目录"
+            "允许访问 $dirText"
+        }
+        "setMode" -> {
+            val mode = obj["mode"]?.jsonPrimitive?.content
+            val modeLabel = when (mode) {
+                "acceptEdits" -> "接受编辑"
+                "plan" -> "计划模式"
+                "bypassPermissions" -> "跳过权限"
+                else -> mode ?: "未知模式"
+            }
+            "切换为「$modeLabel」模式"
+        }
+        else -> type ?: "未知操作"
     }
 }
 

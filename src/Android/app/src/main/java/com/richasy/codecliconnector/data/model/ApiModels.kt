@@ -49,6 +49,7 @@ data class WebSocketMessage(
 /** 通知载荷 */
 @Serializable
 data class NotificationPayload(
+    val hookEvent: String? = null,
     val sessionId: String? = null,
     val cwd: String? = null,
     val title: String? = null,
@@ -66,6 +67,8 @@ data class PermissionRequestPayload(
     val toolName: String? = null,
     val toolInput: String? = null,
     val receivedTimestampMs: Long = 0,
+    /** 权限建议列表 JSON 字符串（如"总是允许 Bash"等选项） */
+    val permissionSuggestions: String? = null,
 )
 
 /** 权限响应载荷（发送回服务端） */
@@ -74,6 +77,10 @@ data class PermissionResponsePayload(
     val requestId: String,
     val behavior: String = "deny",
     val message: String? = null,
+    /** 要应用的权限规则更新 JSON 字符串（等同于用户选择"总是允许"选项） */
+    val updatedPermissions: String? = null,
+    /** 是否中断 Claude（仅 deny 时有效） */
+    val interrupt: Boolean? = null,
 )
 
 /** 已处理通知载荷（由服务器广播，通知其他终端某请求已被处理） */

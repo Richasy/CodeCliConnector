@@ -153,6 +153,13 @@ private fun MainApp() {
                     entity = entity,
                     onAllow = { notificationsViewModel.respondToPermission(entity, allow = true) },
                     onDeny = { notificationsViewModel.respondToPermission(entity, allow = false) },
+                    onAllowWithPermission = { updatedPermissions ->
+                        notificationsViewModel.respondToPermissionAdvanced(
+                            entity = entity,
+                            behavior = "allow",
+                            updatedPermissions = updatedPermissions,
+                        )
+                    },
                     onDismiss = { notificationsViewModel.select(null) },
                 )
             } else {

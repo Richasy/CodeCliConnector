@@ -105,4 +105,26 @@ class NotificationHelper @Inject constructor(
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.notify(nextAlertId++, notification)
     }
+
+    /** 发送会话完成通知 */
+    fun sendStopAlert(title: String?, message: String?) {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context, nextAlertId, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val notification = NotificationCompat.Builder(context, CHANNEL_ALERTS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title ?: "Claude 已完成")
+            .setContentText(message ?: "Claude Code 已完成任务，等待新指令")
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message ?: "Claude Code 已完成任务，等待新指令"))
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager.notify(nextAlertId++, notification)
+    }
 }

@@ -69,4 +69,23 @@ internal sealed class HookPayload
     /// </summary>
     [JsonPropertyName("notification_type")]
     public string? NotificationType { get; set; }
+
+    /// <summary>
+    /// 权限建议列表原始 JSON（PermissionRequest 事件提供的"总是允许"等选项）.
+    /// </summary>
+    [JsonPropertyName("permission_suggestions")]
+    [JsonConverter(typeof(RawJsonConverter))]
+    public string? PermissionSuggestions { get; set; }
+
+    /// <summary>
+    /// Stop hook 是否激活.
+    /// </summary>
+    [JsonPropertyName("stop_hook_active")]
+    public bool? StopHookActive { get; set; }
+
+    /// <summary>
+    /// 最后一条 Claude 回复消息（Stop 事件提供）.
+    /// </summary>
+    [JsonPropertyName("last_assistant_message")]
+    public string? LastAssistantMessage { get; set; }
 }

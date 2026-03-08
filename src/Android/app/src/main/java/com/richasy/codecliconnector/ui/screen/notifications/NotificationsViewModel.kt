@@ -47,10 +47,28 @@ class NotificationsViewModel @Inject constructor(
         _selectedNotification.value = entity
     }
 
+    /** 简单同意/拒绝 */
     fun respondToPermission(entity: NotificationEntity, allow: Boolean) {
+        respondToPermissionAdvanced(
+            entity = entity,
+            behavior = if (allow) "allow" else "deny",
+        )
+    }
+
+    /**
+     * 高级权限响应（支持"总是允许"等权限规则更新）.
+     *
+     * @param entity 通知实体
+     * @param behavior "allow" 或 "deny"
+     * @param updatedPermissions 要应用的权限规则 JSON（如 [{"type":"toolAlwaysAllow","tool":"Bash"}]）
+     */
+    fun respondToPermissionAdvanced(
+        entity: NotificationEntity,
+        behavior: String,
+        updatedPermissions: String? = null,
+    ) {
         viewModelScope.launch {
-            val behavior = if (allow) "allow" else "deny"
-            val status = if (allow) "approved" else "denied"
+            val status = if (behavior == "allow") "approved" else "denied"
             repository.updateStatus(entity.id, status)
             _selectedNotificationId.value = null
             _selectedNotification.value = null
@@ -61,6 +79,7 @@ class NotificationsViewModel @Inject constructor(
                 putExtra("behavior", behavior)
                 putExtra("correlation_id", entity.correlationId)
                 putExtra("source_device_id", entity.sourceDeviceId)
+                if (updatedPermissions != null) putExtra("updated_permissions", updatedPermissions)
             }
             context.startForegroundService(intent)
         }

@@ -419,6 +419,8 @@ internal sealed class ServerConnectionService : IAsyncDisposable
 
         if (message.Type == MessageType.Response)
         {
+            // Response 类型消息可能是权限响应，也可能是服务器广播的 processed_by_other 通知
+            // 后者没有 requestId 字段，解析会失败，属于正常情况
             try
             {
                 var response = JsonSerializer.Deserialize(message.Payload, ConsoleJsonContext.Default.PermissionResponsePayload);
@@ -427,9 +429,9 @@ internal sealed class ServerConnectionService : IAsyncDisposable
                     _requestTracker.TryComplete(response.RequestId, response);
                 }
             }
-            catch (JsonException ex)
+            catch (JsonException)
             {
-                _logger.LogWarning(ex, "解析权限响应失败: {Payload}", message.Payload);
+                _logger.LogDebug("忽略非权限响应消息: {Payload}", message.Payload);
             }
         }
 

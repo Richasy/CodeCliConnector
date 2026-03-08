@@ -46,8 +46,21 @@ internal sealed class PermissionDecisionDetail
     public string Behavior { get; set; } = "deny";
 
     /// <summary>
-    /// 消息.
+    /// 消息（deny 时告诉 Claude 为什么被拒绝）.
     /// </summary>
     [JsonPropertyName("message")]
     public string? Message { get; set; }
+
+    /// <summary>
+    /// 权限规则更新（allow 时应用，等同于用户选择"总是允许"选项）.
+    /// </summary>
+    [JsonPropertyName("updatedPermissions")]
+    [JsonConverter(typeof(RawJsonConverter))]
+    public string? UpdatedPermissions { get; set; }
+
+    /// <summary>
+    /// 是否中断 Claude（仅 deny 时有效，为 true 时直接停止 Claude）.
+    /// </summary>
+    [JsonPropertyName("interrupt")]
+    public bool? Interrupt { get; set; }
 }
